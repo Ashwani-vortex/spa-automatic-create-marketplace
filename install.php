@@ -8,7 +8,6 @@ $request = $_REQUEST;
 
 $domain            = $request['DOMAIN'] ?? null;
 $auth_id           = $request['AUTH_ID'] ?? null;
-$refresh_id        = $request['REFRESH_ID'] ?? null;
 $application_token = $request['APPLICATION_TOKEN'] ?? null;
 
 if (empty($domain) || empty($auth_id)) {
@@ -35,31 +34,28 @@ function bitrixCall($method, $params, $domain, $token) {
     ];
 }
 
-// 1. Create SPA
+// Create SPA
 $spaParams = ['fields' => [
-    'title' => 'Shivam',
-    'isCategoriesEnabled' => 'Y',
-    'isStagesEnabled' => 'Y',
-    'isClientEnabled' => 'Y',
-    'isAutomationEnabled' => 'Y',
-    'isBizProcEnabled' => 'Y',
-    'isObserversEnabled' => 'Y',
-    'isSourceEnabled' => 'Y',
-    'isUseInUserfieldEnabled' => 'Y',
-    'isRecyclebinEnabled' => 'Y'
+    'title'                    => 'Shivam',
+    'isCategoriesEnabled'      => 'Y',
+    'isStagesEnabled'          => 'Y',
+    'isClientEnabled'          => 'Y',
+    'isAutomationEnabled'      => 'Y',
+    'isBizProcEnabled'         => 'Y',
+    'isObserversEnabled'       => 'Y',
+    'isSourceEnabled'          => 'Y',
+    'isUseInUserfieldEnabled'  => 'Y',
+    'isRecyclebinEnabled'      => 'Y'
 ]];
 
 $spaResult = bitrixCall('crm.type.add', $spaParams, $domain, $auth_id);
 
 if (isset($spaResult['data']['result']['type']['entityTypeId'])) {
     $entityTypeId = $spaResult['data']['result']['type']['entityTypeId'];
-    echo "<h2>✅ SPA 'Shivam' Created (ID: {$entityTypeId})</h2>";
+    echo "<h2>✅ SPA 'Shivam' Created Successfully!</h2>";
+    echo "Entity Type ID: <strong>{$entityTypeId}</strong><br><br>";
 
-    // Try different tokens for field creation
-    $tokensToTry = [$auth_id];
-    if (!empty($application_token)) $tokensToTry[] = $application_token;
-
-    $fieldAdded = false;
+    // Try to add field with multiple tokens
     $fieldParams = [
         'moduleId' => 'crm',
         'field' => [
@@ -75,9 +71,12 @@ if (isset($spaResult['data']['result']['type']['entityTypeId'])) {
         ]
     ];
 
-    foreach ($tokensToTry as $token) {
-        $fieldResult = bitrixCall('userfieldconfig.add', $fieldParams, $domain, $token);
-        if ($fieldResult['http'] === 200 && !empty($fieldResult['data']['result'])) {
+    $tokens = array_filter([$auth_id, $application_token]);
+    $fieldAdded = false;
+
+    foreach ($tokens as $token) {
+        $result = bitrixCall('userfieldconfig.add', $fieldParams, $domain, $token);
+        if ($result['http'] === 200 && !empty($result['data']['result'])) {
             echo "✅ Custom field <strong>shivam_name</strong> added successfully!";
             $fieldAdded = true;
             break;
@@ -85,15 +84,17 @@ if (isset($spaResult['data']['result']['type']['entityTypeId'])) {
     }
 
     if (!$fieldAdded) {
-        echo "<strong>⚠️ Could not add field due to insufficient permissions.</strong><br>";
-        echo "This is common during Marketplace installation.<br><br>";
-        echo "<strong>Recommended Solution:</strong><br>";
-        echo "1. Go to your Bitrix24 → <strong>Applications → Installed</strong><br>";
-        echo "2. Open this app → Click <strong>Update Permissions</strong> or reinstall it as Administrator.<br>";
-        echo "3. Grant full <strong>CRM</strong> access.<br>";
-        echo "4. Reinstall the app.";
+        echo "<h3>⚠️ Field could not be added automatically (common during installation).</h3>";
+        echo "<p><strong>What to do now:</strong></p>";
+        echo "<ol>";
+        echo "<li>Go to <strong>Applications → Installed Apps</strong></li>";
+        echo "<li>Find your app → Click <strong>Update Permissions</strong> (or Uninstall & Reinstall as Administrator)</li>";
+        echo "<li>Grant <strong>full CRM access</strong></li>";
+        echo "<li>Reinstall the app</li>";
+        echo "</ol>";
+        echo "<p><strong>Alternative:</strong> Manually add the field <strong>shivam_name</strong> in the SPA settings.</p>";
     }
 } else {
-    echo "SPA Error: " . json_encode($spaResult['data']);
+    echo "❌ SPA creation failed.";
 }
 ?>

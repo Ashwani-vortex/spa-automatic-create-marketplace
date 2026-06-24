@@ -1,24 +1,21 @@
 <?php
 header('Content-Type: text/html; charset=utf-8');
 
-// === Logging for debugging ===
 $logFile = __DIR__ . '/install_log.txt';
-file_put_contents($logFile, date('Y-m-d H:i:s') . " - FULL REQUEST: " . print_r($_REQUEST, true) . "\n\n", FILE_APPEND);
+file_put_contents($logFile, date('Y-m-d H:i:s') . " - REQUEST: " . print_r($_REQUEST, true) . "\n\n", FILE_APPEND);
 
-// Get authorization data (Marketplace style)
 $request = $_REQUEST;
 
-$domain = $request['DOMAIN'] ?? null;
-$auth_id = $request['AUTH_ID'] ?? null;
-$refresh_id = $request['REFRESH_ID'] ?? null;
-$application_token = $request['APPLICATION_TOKEN'] ?? null;
-$server_endpoint = $request['SERVER_ENDPOINT'] ?? 'https://oauth.bitrix.info/rest/';
+$domain             = $request['DOMAIN'] ?? null;
+$auth_id            = $request['AUTH_ID'] ?? null;
+$refresh_id         = $request['REFRESH_ID'] ?? null;
+$application_token  = $request['APPLICATION_TOKEN'] ?? null;
 
 if (empty($domain) || empty($auth_id)) {
-    die("❌ Missing DOMAIN or AUTH_ID. Installation failed.");
+    die("❌ Missing authorization data.");
 }
 
-// For installation, we can use AUTH_ID as access_token for the first call
+// Try with AUTH_ID first
 $access_token = $auth_id;
 
 function bitrixCall($method, $params, $domain, $access_token) {
@@ -29,44 +26,40 @@ function bitrixCall($method, $params, $domain, $access_token) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 40);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($httpCode !== 200) {
-        return ['error' => "HTTP {$httpCode}"];
-    }
-
-    return json_decode($response, true);
+    return [
+        'httpCode' => $httpCode,
+        'data'     => json_decode($response, true)
+    ];
 }
 
-// ===================== CREATE SPA "Shivam" =====================
-$spaParams = [
-    'fields' => [
-        'title'                    => 'Shivam',
-        'isCategoriesEnabled'      => 'Y',
-        'isStagesEnabled'          => 'Y',
-        'isClientEnabled'          => 'Y',
-        'isAutomationEnabled'      => 'Y',
-        'isBizProcEnabled'         => 'Y',
-        'isObserversEnabled'       => 'Y',
-        'isSourceEnabled'          => 'Y',
-        'isUseInUserfieldEnabled'  => 'Y',
-        'isRecyclebinEnabled'      => 'Y'
-    ]
-];
+// === Create SPA (already working) ===
+$spaParams = ['fields' => [
+    'title' => 'Shivam',
+    'isCategoriesEnabled' => 'Y',
+    'isStagesEnabled' => 'Y',
+    'isClientEnabled' => 'Y',
+    'isAutomationEnabled' => 'Y',
+    'isBizProcEnabled' => 'Y',
+    'isObserversEnabled' => 'Y',
+    'isSourceEnabled' => 'Y',
+    'isUseInUserfieldEnabled' => 'Y',
+    'isRecyclebinEnabled' => 'Y'
+]];
 
 $spaResult = bitrixCall('crm.type.add', $spaParams, $domain, $access_token);
 
-if (isset($spaResult['result']['type']['entityTypeId'])) {
-    $entityTypeId = $spaResult['result']['type']['entityTypeId'];
+if (isset($spaResult['data']['result']['type']['entityTypeId'])) {
+    $entityTypeId = $spaResult['data']['result']['type']['entityTypeId'];
 
-    echo "<h2>✅ SPA 'Shivam' Created Successfully!</h2>";
-    echo "Entity Type ID: <strong>{$entityTypeId}</strong><br><br>";
+    echo "<h2>✅ SPA 'Shivam' Created (ID: {$entityTypeId})</h2>";
 
-    // ===================== ADD FIELD "shivam_name" =====================
+    // === Try to add field with better error handling ===
     $fieldParams = [
         'moduleId' => 'crm',
         'field' => [
@@ -84,13 +77,22 @@ if (isset($spaResult['result']['type']['entityTypeId'])) {
 
     $fieldResult = bitrixCall('userfieldconfig.add', $fieldParams, $domain, $access_token);
 
-    if (!empty($fieldResult['result'])) {
-        echo "✅ Custom field <strong>shivam_name</strong> added successfully!<br>";
-        echo "<p>You can now find the new SPA in CRM → Smart Process Automation.</p>";
+    if ($fieldResult['httpCode'] === 200 && !empty($fieldResult['data']['result'])) {
+        echo "✅ Custom field <strong>shivam_name</strong> added successfully!";
     } else {
-        echo "⚠️ Field error: " . json_encode($fieldResult);
+        echo "<strong>⚠️ Field creation failed (HTTP {$fieldResult['httpCode']})</strong><br>";
+        echo "<pre>" . htmlspecialchars(json_encode($fieldResult['data'], JSON_PRETTY_PRINT)) . "</pre>";
+        
+        // Fallback: Try with APPLICATION_TOKEN if available
+        if (!empty($application_token)) {
+            echo "<br><em>Trying alternative token...</em><br>";
+            $altResult = bitrixCall('userfieldconfig.add', $fieldParams, $domain, $application_token);
+            if ($altResult['httpCode'] === 200 && !empty($altResult['data']['result'])) {
+                echo "✅ Field added using APPLICATION_TOKEN!";
+            }
+        }
     }
 } else {
-    echo "❌ SPA creation failed: " . json_encode($spaResult['error'] ?? $spaResult);
+    echo "SPA Error: " . json_encode($spaResult['data']);
 }
 ?>
